@@ -1,66 +1,41 @@
-from asyncio import threads
-from threading import Thread
+from functools import wraps
+
+from flask import Flask, Response, request,make_response
+import time
+from flask_cors import CORS
 
 from controller.SearchController import SearchController
-from entity.Mxdm6 import Mxdm6
-from util.SearchUtil import SearchUtil
-import concurrent.futures
 
-def get_url_thread(episodes):
-    """
-    多线程获取播放链接
-    :param episodes:{'/dongmanplay/7912-1-1.html':'播放凡人修仙传重制版第01集','/dongmanplay/7912-1-1.html':'播放凡人修仙传重制版第10集'...}
-    :return:
-    """
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        to_do = []
-        for url, name in episodes.items():
-            t = executor.submit(util.search_url, url, name, mxdm6)
-            to_do.append(t)
-        for thread in concurrent.futures.as_completed(to_do):
-            yield thread.result()
+app = Flask(__name__)
+CORS(app)
 
+# 装饰器封装的缓存处理逻辑
+def cache_control(max_age=3600):
+    def decorator(f):
+        @wraps(f)
+        def wrapped(*args, **kwargs):
+            resp = make_response(f(*args, **kwargs))
+            resp.headers['Cache-Control'] = f'public, max-age={max_age}'
+            return resp
+        return wrapped
+    return decorator
 
-def get_episode_thread(hrefs):
-    """
-    多线程获取播放列表
-    :param hrefs:
-    :return:
-    """
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        to_do = []
-        for key, value in hrefs.items():
+@app.route('/test')
+def stream():
+    def generate():
+        # Simulate fetching large resources incrementally
+        for i in range(10):
+            time.sleep(1)  # Simulate time taken to fetch each resource
+            yield f"data: Resource {i}\n\n"  # SSE format: "data: <message>\n\n"
+    return Response(generate(), mimetype='text/event-stream')
 
-            t =  executor.submit(util.search_episode,key, mxdm6)
-            to_do.append(t)
-            # t.start()
-        for thread in concurrent.futures.as_completed(to_do):
-            for key in thread.result():
-                for result in get_url_thread(thread.result()[key]):
-                    yield result
+@app.route('/getAnimePlayUrl',methods = ['GET'])
+@cache_control(max_age=600)
+def getAnimePlayUrl():
+    name = request.args.get('name')
+    searchController = SearchController()
+    return Response(searchController.get_anime(name), mimetype='text/event-stream')
 
-
-def get_anime():
-    util = SearchUtil()
-    mxdm6 = Mxdm6()
-
-    # 获取搜索结果
-    hrefs = util.search_entry("凡人", mxdm6)
-    for data in get_episode_thread(hrefs):
-        yield data
 
 if __name__ == '__main__':
-    util = SearchUtil()
-    mxdm6 = Mxdm6()
-
-    # 获取搜索结果
-    # hrefs = util.search_entry("凡人", mxdm6)
-    # for data in get_episode_thread(hrefs):
-    #     print(f"返回数据: {data}")
-
-    searchController = SearchController()
-
-    for data in searchController.get_anime():
-        print(data)
-
-    # print(searchController.get_anime())
+    app.run(debug=True)
