@@ -1,8 +1,98 @@
+from __future__ import annotations
+
 import html
 import json
 import re
 import requests
 from bs4 import BeautifulSoup
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import unpad
+import base64
+
+# 已知的url匹配值, 用于对破以后的部分乱码做正则匹配还原
+known_domains = {
+    "-hot.com": "https://vip.dytt-hot.com",
+    "eimg.com": "https://p16-va-tiktok.ibyteimg.com",
+    "nema.com": "https://vip.dytt-cinema.com"
+}
+
+# 破译play.js得到的值, 用于破译getVideoPlay方法中传入的uri
+key = b"57A891D97E332A9D"
+iv = b"8d312e8d3cde6cbb"
+
+def search_video_url(url):
+    """
+    获取视频链接
+    :return: 视频的完整链接
+    """
+    # 发送首页请求
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    }
+    r = requests.get("https://danmu.yhdmjx.com/m3u8.php?url=" + url, headers)
+    html_text = r.text
+
+    # 使用正则表达式提取 getVideoInfo() 中的字符串参数
+    pattern = r'getVideoInfo\("([^"]+)"\)'
+    match = re.search(pattern, html_text)
+
+    if match:
+        video_info_value = match.group(1)
+
+        ciphertext = base64.b64decode(video_info_value)
+        # 创建 AES-CBC 解密器
+        cipher = AES.new(key, AES.MODE_CBC, iv)
+
+        # 解密并去除 PKCS7 填充
+        decrypted = cipher.decrypt(ciphertext)
+        plaintext = unpad(decrypted, AES.block_size)
+
+        # 把Bytes编码为utf-8
+        line = plaintext.decode("utf-8", errors="ignore")
+
+        # 对解密出来的字符串做正则匹配和修复
+        return parse_decrypted_url(line)
+
+    else:
+        return None
+        # print("没有找到 getVideoInfo() 的参数")
+
+
+def parse_decrypted_url(line: str) -> str | None:
+    """
+    从解密后的单条字符串中提取 完整链接。
+    如果匹配不到有效地址，返回 原链接。
+    """
+    line = trim_before_com(line)
+
+    match = re.search(r'([-a-z]+\.(?:com)/[^\s]+)', line)
+    if not match:
+        return None
+
+    suffix = match.group(1)
+
+    # 匹配后缀并还原完整 URL
+    for key, domain in known_domains.items():
+        if suffix.startswith(key):
+            return domain + suffix[len(key):]
+
+    return line  # 如果后缀不在已知映射中
+
+
+def trim_before_com(input_str: str) -> str:
+    """
+    把解密出来的字符串前面的大量乱码去除, 方便做正则匹配
+    :param input_str: 输入的字符串
+    :return: 返回去除掉xxxx.com前面所有字符内容的字符串
+    """
+    idx = input_str.find('.com')
+    if idx == -1 or idx < 4:
+        return input_str  # 没找到 .com 或无法向前推 4 位，原样返回
+
+    # 向前推 4 个字符的位置
+    cut_pos = idx - 4
+    return input_str[cut_pos:]
+
 
 class SearchUtil:
 
@@ -90,6 +180,13 @@ class SearchUtil:
         return result
 
     def search_url(self, episode, name,web):
+        """
+        查找视频页链接
+        :param episode:
+        :param name:
+        :param web:
+        :return:
+        """
 
         # 发送播放页请求
         player_data = None
@@ -113,16 +210,11 @@ class SearchUtil:
                     player_data = json.loads(json_str)
 
         if player_data:
-            # print("url =", player_data.get("url"))
-            result = {name: web.play_url+player_data.get("url")}
+            # 把拿到的页面地址去解析视频地址
+            video_url = search_video_url(player_data.get("url"))
+
+            result = {name: video_url}
             return result
         else:
             return None
-            # print("未找到 player_aaaa 数据")
-        # url = wrapper["url"]
 
-    # def __init__(self):
-    #     # 第一步：搜索条目
-    #     self.search_entry("凡人",mxdm6)
-    #     # 第二步：搜索剧集
-    #     # 第三步：匹配播放链接

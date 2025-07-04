@@ -17,7 +17,7 @@ class SearchController:
         :param episodes:{'/dongmanplay/7912-1-1.html':'播放凡人修仙传重制版第01集','/dongmanplay/7912-1-1.html':'播放凡人修仙传重制版第10集'...}
         :return:
         """
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
             to_do = []
             for url, name in episodes.items():
                 t = executor.submit(self.util.search_url, url, name, self.mxdm6)
@@ -32,7 +32,7 @@ class SearchController:
         :param hrefs:
         :return:
         """
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
             to_do = []
             for key, value in hrefs.items():
 
